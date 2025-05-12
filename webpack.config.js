@@ -14,9 +14,9 @@ export default async (env, argv) => {
   return {
     entry: "./src/client/Main.ts",
     output: {
-      publicPath: "/",
-      filename: "js/[name].[contenthash].js", // Added content hash
-      path: path.resolve(__dirname, "static"),
+      publicPath: isProduction ? "/King-War/" : "/",
+      filename: "js/[name].[contenthash].js",
+      path: path.resolve(__dirname, "dist"),
       clean: isProduction,
     },
     module: {
