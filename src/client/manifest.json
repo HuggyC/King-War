@@ -2,7 +2,7 @@
   "name": "King War",
   "short_name": "King War",
   "description": "A strategy game based on OpenFrontIO",
-  "start_url": "/",
+  "start_url": "/King-War/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#000000",
