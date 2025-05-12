@@ -161,6 +161,11 @@ class Client {
       loginDiscordButton.translationKey = "main.login_discord";
       loginDiscordButton.addEventListener("click", discordLogin);
       logoutDiscordButton.hidden = true;
+      // Allow playing without login
+      if (!this.usernameInput.getCurrentUsername()) {
+        localStorage.setItem("username", "Guest");
+        window.location.reload();
+      }
     } else {
       // JWT appears to be valid, assume we are logged in
       loginDiscordButton.disable = true;
@@ -173,6 +178,9 @@ class Client {
         loginDiscordButton.translationKey = "main.login_discord";
         loginDiscordButton.addEventListener("click", discordLogin);
         logoutDiscordButton.hidden = true;
+        // Set default username after logout
+        localStorage.setItem("username", "Guest");
+        window.location.reload();
       });
       // Look up the discord user object.
       // TODO: Add caching
@@ -183,6 +191,9 @@ class Client {
           loginDiscordButton.translationKey = "main.login_discord";
           loginDiscordButton.addEventListener("click", discordLogin);
           logoutDiscordButton.hidden = true;
+          // Set default username
+          localStorage.setItem("username", "Guest");
+          window.location.reload();
           return;
         }
         // TODO: Update the page for logged in user
