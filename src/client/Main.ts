@@ -30,28 +30,21 @@ import { generateCryptoRandomUUID } from "./Utils";
 import "./components/NewsButton";
 import { NewsButton } from "./components/NewsButton";
 import "./components/baseComponents/Button";
-import { OButton } from "./components/baseComponents/Button";
 import "./components/baseComponents/Modal";
-import { discordLogin, getUserMe, isLoggedIn, logOut } from "./jwt";
 import "./styles.css";
 
 export interface JoinLobbyEvent {
   clientID: string;
-  // Multiplayer games only have gameID, gameConfig is not known until game starts.
   gameID: string;
-  // GameConfig only exists when playing a singleplayer game.
   gameStartInfo?: GameStartInfo;
-  // GameRecord exists when replaying an archived game.
   gameRecord?: GameRecord;
 }
 
 class Client {
   private gameStop: () => void;
-
   private usernameInput: UsernameInput | null = null;
   private flagInput: FlagInput | null = null;
   private darkModeButton: DarkModeButton | null = null;
-
   private joinModal: JoinPrivateLobbyModal;
   private publicLobby: PublicLobby;
   private googleAds: NodeListOf<GoogleAdElement>;
@@ -102,18 +95,17 @@ class Client {
       consolex.warn("Dark mode button element not found");
     }
 
-    const loginDiscordButton = document.getElementById(
-      "login-discord",
-    ) as OButton;
-    const logoutDiscordButton = document.getElementById(
-      "logout-discord",
-    ) as OButton;
-
     this.usernameInput = document.querySelector(
       "username-input",
     ) as UsernameInput;
     if (!this.usernameInput) {
       consolex.warn("Username input element not found");
+    }
+
+    // Set default username if not set
+    if (!this.usernameInput.getCurrentUsername()) {
+      localStorage.setItem("username", "Guest");
+      window.location.reload();
     }
 
     this.publicLobby = document.querySelector("public-lobby") as PublicLobby;
@@ -142,63 +134,11 @@ class Client {
       }
     });
 
-    // const ctModal = document.querySelector("chat-modal") as ChatModal;
-    // ctModal instanceof ChatModal;
-    // document.getElementById("chat-button").addEventListener("click", () => {
-    //   ctModal.open();
-    // });
-
     const hlpModal = document.querySelector("help-modal") as HelpModal;
     hlpModal instanceof HelpModal;
     document.getElementById("help-button").addEventListener("click", () => {
       hlpModal.open();
     });
-
-    const claims = isLoggedIn();
-    if (claims === false) {
-      // Not logged in
-      loginDiscordButton.disable = false;
-      loginDiscordButton.translationKey = "main.login_discord";
-      loginDiscordButton.addEventListener("click", discordLogin);
-      logoutDiscordButton.hidden = true;
-      // Allow playing without login
-      if (!this.usernameInput.getCurrentUsername()) {
-        localStorage.setItem("username", "Guest");
-        window.location.reload();
-      }
-    } else {
-      // JWT appears to be valid, assume we are logged in
-      loginDiscordButton.disable = true;
-      loginDiscordButton.translationKey = "main.logged_in";
-      logoutDiscordButton.hidden = false;
-      logoutDiscordButton.addEventListener("click", () => {
-        // Log out
-        logOut();
-        loginDiscordButton.disable = false;
-        loginDiscordButton.translationKey = "main.login_discord";
-        loginDiscordButton.addEventListener("click", discordLogin);
-        logoutDiscordButton.hidden = true;
-        // Set default username after logout
-        localStorage.setItem("username", "Guest");
-        window.location.reload();
-      });
-      // Look up the discord user object.
-      // TODO: Add caching
-      getUserMe().then((userMeResponse) => {
-        if (userMeResponse === false) {
-          // Not logged in
-          loginDiscordButton.disable = false;
-          loginDiscordButton.translationKey = "main.login_discord";
-          loginDiscordButton.addEventListener("click", discordLogin);
-          logoutDiscordButton.hidden = true;
-          // Set default username
-          localStorage.setItem("username", "Guest");
-          window.location.reload();
-          return;
-        }
-        // TODO: Update the page for logged in user
-      });
-    }
 
     const settingsModal = document.querySelector(
       "user-setting",
@@ -364,11 +304,6 @@ function setFavicon(): void {
 
 // WARNING: DO NOT EXPOSE THIS ID
 export function getPersistentIDFromCookie(): string {
-  const claims = isLoggedIn();
-  if (claims !== false && claims.sub) {
-    return claims.sub;
-  }
-
   const COOKIE_NAME = "player_persistent_id";
 
   // Try to get existing cookie
