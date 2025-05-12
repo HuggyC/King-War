@@ -132,6 +132,11 @@ export default async (env, argv) => {
             from: path.resolve(__dirname, "src/client/manifest.json"),
             to: path.resolve(__dirname, "dist/manifest.json"),
           },
+          {
+            from: path.resolve(__dirname, "resources/images"),
+            to: path.resolve(__dirname, "dist/images"),
+            noErrorOnMissing: true,
+          },
         ],
         options: { concurrency: 100 },
       }),
