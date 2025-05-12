@@ -137,6 +137,11 @@ export default async (env, argv) => {
             to: path.resolve(__dirname, "dist/images"),
             noErrorOnMissing: true,
           },
+          {
+            from: path.resolve(__dirname, "src/client/images"),
+            to: path.resolve(__dirname, "dist/images"),
+            noErrorOnMissing: true,
+          },
         ],
         options: { concurrency: 100 },
       }),
