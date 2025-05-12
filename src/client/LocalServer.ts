@@ -1,64 +1,175 @@
-import { Config } from "../core/configuration/Config";
-import { ClientMessage, ClientMessageSchema, GameConfig, GameID, GameRecordSchema, Intent, ServerMessage, ServerStartGameMessageSchema, ServerTurnMessageSchema, Turn } from "../core/Schemas";
-import { CreateGameRecord, generateGameID } from "../core/Util";
+import { consolex } from "../core/Consolex";
+import {
+  AllPlayersStats,
+  ClientMessage,
+  ClientMessageSchema,
+  ClientSendWinnerMessage,
+  GameRecordSchema,
+  Intent,
+  PlayerRecord,
+  ServerMessage,
+  ServerStartGameMessageSchema,
+  Turn,
+} from "../core/Schemas";
+import { createGameRecord, decompressGameRecord } from "../core/Util";
+import { LobbyConfig } from "./ClientGameRunner";
+import { getPersistentIDFromCookie } from "./Main";
 
 export class LocalServer {
+  private turns: Turn[] = [];
+  private intents: Intent[] = [];
+  private startedAt: number;
 
+  private endTurnIntervalID;
 
-    private turns: Turn[] = []
-    private intents: Intent[] = []
-    private startedAt: number
+  private paused = false;
 
-    private endTurnIntervalID
+  private winner: ClientSendWinnerMessage = null;
+  private allPlayersStats: AllPlayersStats = {};
 
-    private gameID: GameID
+  constructor(
+    private lobbyConfig: LobbyConfig,
+    private clientConnect: () => void,
+    private clientMessage: (message: ServerMessage) => void,
+  ) {}
 
-    constructor(private config: Config, private gameConfig: GameConfig, private clientConnect: () => void, private clientMessage: (message: ServerMessage) => void) {
-        this.gameID = generateGameID()
+  start() {
+    this.startedAt = Date.now();
+    if (!this.lobbyConfig.gameRecord) {
+      this.endTurnIntervalID = setInterval(
+        () => this.endTurn(),
+        this.lobbyConfig.serverConfig.turnIntervalMs(),
+      );
     }
-
-    start() {
-        this.startedAt = Date.now()
-        this.endTurnIntervalID = setInterval(() => this.endTurn(), this.config.turnIntervalMs());
-        this.clientConnect()
-        this.clientMessage(ServerStartGameMessageSchema.parse({
-            type: "start",
-            config: this.gameConfig,
-            turns: [],
-        }))
+    this.clientConnect();
+    if (this.lobbyConfig.gameRecord) {
+      this.turns = decompressGameRecord(this.lobbyConfig.gameRecord).turns;
+      console.log(`loaded turns: ${JSON.stringify(this.turns)}`);
     }
+    this.clientMessage(
+      ServerStartGameMessageSchema.parse({
+        type: "start",
+        gameID: this.lobbyConfig.gameStartInfo.gameID,
+        gameStartInfo: this.lobbyConfig.gameStartInfo,
+        turns: this.turns,
+      }),
+    );
+  }
 
-    onMessage(message: string) {
-        const clientMsg: ClientMessage = ClientMessageSchema.parse(JSON.parse(message))
-        if (clientMsg.type == "intent") {
-            this.intents.push(clientMsg.intent)
+  pause() {
+    this.paused = true;
+  }
+
+  resume() {
+    this.paused = false;
+  }
+
+  onMessage(message: string) {
+    const clientMsg: ClientMessage = ClientMessageSchema.parse(
+      JSON.parse(message),
+    );
+    if (clientMsg.type == "intent") {
+      if (this.lobbyConfig.gameRecord) {
+        // If we are replaying a game, we don't want to process intents
+        return;
+      }
+      if (this.paused) {
+        if (clientMsg.intent.type == "troop_ratio") {
+          // Store troop change events because otherwise they are
+          // not registered when game is paused.
+          this.intents.push(clientMsg.intent);
         }
+        return;
+      }
+      this.intents.push(clientMsg.intent);
     }
-
-    private endTurn() {
-        const pastTurn: Turn = {
-            turnNumber: this.turns.length,
-            gameID: this.gameID,
-            intents: this.intents
-        }
-        this.turns.push(pastTurn)
-        this.intents = []
+    if (clientMsg.type == "hash") {
+      if (!this.lobbyConfig.gameRecord) {
+        // If we are playing a singleplayer then store hash.
+        this.turns[clientMsg.turnNumber].hash = clientMsg.hash;
+        return;
+      }
+      // If we are replaying a game then verify hash.
+      const archivedHash = this.turns[clientMsg.turnNumber].hash;
+      if (!archivedHash) {
+        console.warn(
+          `no archived hash found for turn ${clientMsg.turnNumber}, client hash: ${clientMsg.hash}`,
+        );
+        return;
+      }
+      if (archivedHash != clientMsg.hash) {
+        console.error(
+          `desync detected on turn ${clientMsg.turnNumber}, client hash: ${clientMsg.hash}, server hash: ${archivedHash}`,
+        );
         this.clientMessage({
-            type: "turn",
-            turn: pastTurn
-        })
-    }
-
-    public endGame() {
-        console.log('local server ending game')
-        clearInterval(this.endTurnIntervalID)
-        const record = CreateGameRecord(this.gameID, this.gameConfig, this.turns, this.startedAt, Date.now())
-        // Clear turns because beacon only supports up to 64kb
-        record.turns = []
-        // For unload events, sendBeacon is the only reliable method
-        const blob = new Blob([JSON.stringify(GameRecordSchema.parse(record))], {
-            type: 'application/json'
+          type: "desync",
+          turn: clientMsg.turnNumber,
+          correctHash: archivedHash,
+          clientsWithCorrectHash: 0,
+          totalActiveClients: 1,
+          yourHash: clientMsg.hash,
         });
-        navigator.sendBeacon('/archive_singleplayer_game', blob);
+      } else {
+        console.log(
+          `hash verified on turn ${clientMsg.turnNumber}, client hash: ${clientMsg.hash}, server hash: ${archivedHash}`,
+        );
+      }
     }
+    if (clientMsg.type == "winner") {
+      this.winner = clientMsg;
+      this.allPlayersStats = clientMsg.allPlayersStats;
+    }
+  }
+
+  private endTurn() {
+    if (this.paused) {
+      return;
+    }
+    const pastTurn: Turn = {
+      turnNumber: this.turns.length,
+      intents: this.intents,
+    };
+    this.turns.push(pastTurn);
+    this.intents = [];
+    this.clientMessage({
+      type: "turn",
+      turn: pastTurn,
+    });
+  }
+
+  public endGame(saveFullGame: boolean = false) {
+    consolex.log("local server ending game");
+    clearInterval(this.endTurnIntervalID);
+    const players: PlayerRecord[] = [
+      {
+        ip: null,
+        persistentID: getPersistentIDFromCookie(),
+        username: this.lobbyConfig.playerName,
+        clientID: this.lobbyConfig.clientID,
+      },
+    ];
+    const record = createGameRecord(
+      this.lobbyConfig.gameStartInfo.gameID,
+      this.lobbyConfig.gameStartInfo,
+      players,
+      this.turns,
+      this.startedAt,
+      Date.now(),
+      this.winner?.winner,
+      this.winner?.winnerType,
+      this.allPlayersStats,
+    );
+    if (!saveFullGame) {
+      // Clear turns because beacon only supports up to 64kb
+      record.turns = [];
+    }
+    // For unload events, sendBeacon is the only reliable method
+    const blob = new Blob([JSON.stringify(GameRecordSchema.parse(record))], {
+      type: "application/json",
+    });
+    const workerPath = this.lobbyConfig.serverConfig.workerPath(
+      this.lobbyConfig.gameStartInfo.gameID,
+    );
+    navigator.sendBeacon(`/${workerPath}/api/archive_singleplayer_game`, blob);
+  }
 }

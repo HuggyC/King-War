@@ -1,366 +1,580 @@
-import { Config } from "../configuration/Config"
-import { GameEvent } from "../EventBus"
-import { ClientID, GameConfig, GameID } from "../Schemas"
-import { MessageType } from "../../client/graphics/layers/EventsDisplay"
-import { SearchNode } from "../pathfinding/AStar"
+import { Config } from "../configuration/Config";
+import { AllPlayersStats, ClientID } from "../Schemas";
+import { GameMap, TileRef } from "./GameMap";
+import {
+  GameUpdate,
+  GameUpdateType,
+  PlayerUpdate,
+  UnitUpdate,
+} from "./GameUpdates";
+import { PlayerView } from "./GameView";
+import { Stats } from "./Stats";
 
-export type PlayerID = string
-export type Tick = number
-export type Gold = number
+export type PlayerID = string;
+export type Tick = number;
+export type Gold = number;
 
 export const AllPlayers = "AllPlayers" as const;
 
-export enum Difficulty {
-    Easy = "Easy",
-    Medium = "Medium",
-    Hard = "Hard",
-    Impossible = "Impossible",
+// export type GameUpdates = Record<GameUpdateType, GameUpdate[]>;
+// Create a type that maps GameUpdateType to its corresponding update type
+type UpdateTypeMap<T extends GameUpdateType> = Extract<GameUpdate, { type: T }>;
+
+// Then use it to create the record type
+export type GameUpdates = {
+  [K in GameUpdateType]: UpdateTypeMap<K>[];
+};
+
+export interface MapPos {
+  x: number;
+  y: number;
 }
 
-export enum GameMap {
-    World = "World",
-    Europe = "Europe",
-    Mena = "Mena",
-    NorthAmerica = "North America",
-    Oceania = "Oceania"
+export enum Difficulty {
+  Easy = "Easy",
+  Medium = "Medium",
+  Hard = "Hard",
+  Impossible = "Impossible",
 }
+
+export type Team = string;
+
+export const Duos = "Duos" as const;
+
+export const ColoredTeams: Record<string, Team> = {
+  Red: "Red",
+  Blue: "Blue",
+  Teal: "Teal",
+  Purple: "Purple",
+  Yellow: "Yellow",
+  Orange: "Orange",
+  Green: "Green",
+  Bot: "Bot",
+} as const;
+
+export enum GameMapType {
+  World = "World",
+  Europe = "Europe",
+  EuropeClassic = "Europe Classic",
+  Mena = "Mena",
+  NorthAmerica = "North America",
+  SouthAmerica = "South America",
+  Oceania = "Oceania",
+  BlackSea = "Black Sea",
+  Africa = "Africa",
+  Pangaea = "Pangaea",
+  Asia = "Asia",
+  Mars = "Mars",
+  Britannia = "Britannia",
+  GatewayToTheAtlantic = "Gateway to the Atlantic",
+  Australia = "Australia",
+  Iceland = "Iceland",
+  Japan = "Japan",
+  BetweenTwoSeas = "Between Two Seas",
+  KnownWorld = "Known World",
+  FaroeIslands = "Faroe Islands",
+  DeglaciatedAntarctica = "Deglaciated Antarctica",
+  FalklandIslands = "Falkland Islands",
+  Baikal = "Baikal",
+}
+
+export const mapCategories: Record<string, GameMapType[]> = {
+  continental: [
+    GameMapType.World,
+    GameMapType.NorthAmerica,
+    GameMapType.SouthAmerica,
+    GameMapType.Europe,
+    GameMapType.EuropeClassic,
+    GameMapType.Asia,
+    GameMapType.Africa,
+    GameMapType.Oceania,
+  ],
+  regional: [
+    GameMapType.BlackSea,
+    GameMapType.Britannia,
+    GameMapType.GatewayToTheAtlantic,
+    GameMapType.BetweenTwoSeas,
+    GameMapType.Iceland,
+    GameMapType.Japan,
+    GameMapType.Mena,
+    GameMapType.Australia,
+    GameMapType.FaroeIslands,
+    GameMapType.FalklandIslands,
+    GameMapType.Baikal,
+  ],
+  fantasy: [
+    GameMapType.Pangaea,
+    GameMapType.Mars,
+    GameMapType.KnownWorld,
+    GameMapType.DeglaciatedAntarctica,
+  ],
+};
 
 export enum GameType {
-    Singleplayer = "Singleplayer",
-    Public = "Public",
-    Private = "Private",
+  Singleplayer = "Singleplayer",
+  Public = "Public",
+  Private = "Private",
+}
+
+export enum GameMode {
+  FFA = "Free For All",
+  Team = "Team",
 }
 
 export interface UnitInfo {
-    cost: (player: Player) => Gold
-    // Determines if its owner changes when its tile is conquered.
-    territoryBound: boolean
+  cost: (player: Player | PlayerView) => Gold;
+  // Determines if its owner changes when its tile is conquered.
+  territoryBound: boolean;
+  maxHealth?: number;
+  damage?: number;
+  constructionDuration?: number;
 }
 
 export enum UnitType {
-    TransportShip = "Transport",
-    Destroyer = "Destroyer",
-    Battleship = "Battleship",
-    Shell = "Shell",
-    Port = "Port",
-    AtomBomb = "Atom Bomb",
-    HydrogenBomb = "Hydrogen Bomb",
-    TradeShip = "Trade Ship",
-    MissileSilo = "Missile Silo",
-    DefensePost = "Defense Post",
-    City = "City"
+  TransportShip = "Transport",
+  Warship = "Warship",
+  Shell = "Shell",
+  SAMMissile = "SAMMissile",
+  Port = "Port",
+  AtomBomb = "Atom Bomb",
+  HydrogenBomb = "Hydrogen Bomb",
+  TradeShip = "Trade Ship",
+  MissileSilo = "Missile Silo",
+  DefensePost = "Defense Post",
+  SAMLauncher = "SAM Launcher",
+  City = "City",
+  MIRV = "MIRV",
+  MIRVWarhead = "MIRV Warhead",
+  Construction = "Construction",
+}
+
+export const nukeTypes = [
+  UnitType.AtomBomb,
+  UnitType.HydrogenBomb,
+  UnitType.MIRVWarhead,
+  UnitType.MIRV,
+] as UnitType[];
+
+export type NukeType = (typeof nukeTypes)[number];
+
+export enum Relation {
+  Hostile = 0,
+  Distrustful = 1,
+  Neutral = 2,
+  Friendly = 3,
 }
 
 export class Nation {
-    constructor(
-        public readonly name: string,
-        public readonly cell: Cell,
-        public readonly strength: number,
-    ) { }
-}
-
-export class EmojiMessage {
-    constructor(
-        public readonly sender: Player,
-        public readonly recipient: Player | typeof AllPlayers,
-        public readonly emoji: string,
-        public readonly createdAt: Tick
-    ) { }
+  constructor(
+    public readonly spawnCell: Cell,
+    public readonly strength: number,
+    public readonly playerInfo: PlayerInfo,
+  ) {}
 }
 
 export class Cell {
+  public index: number;
 
-    private strRepr: string
+  private strRepr: string;
 
-    constructor(
-        public readonly x,
-        public readonly y
-    ) {
-        this.strRepr = `Cell[${this.x},${this.y}]`
-    }
+  constructor(
+    public readonly x: number,
+    public readonly y: number,
+  ) {
+    this.strRepr = `Cell[${this.x},${this.y}]`;
+  }
 
-    toString(): string { return this.strRepr }
+  pos(): MapPos {
+    return {
+      x: this.x,
+      y: this.y,
+    };
+  }
+
+  toString(): string {
+    return this.strRepr;
+  }
 }
 
 export enum TerrainType {
-    Plains,
-    Highland,
-    Mountain,
-    Lake,
-    Ocean
+  Plains,
+  Highland,
+  Mountain,
+  Lake,
+  Ocean,
 }
 
 export enum PlayerType {
-    Bot = "BOT",
-    Human = "HUMAN",
-    FakeHuman = "FAKEHUMAN",
+  Bot = "BOT",
+  Human = "HUMAN",
+  FakeHuman = "FAKEHUMAN",
 }
 
-export interface ExecutionView {
-    isActive(): boolean
-    // TODO: remove owner
-    owner(): Player
-    activeDuringSpawnPhase(): boolean
+export interface Execution {
+  isActive(): boolean;
+  activeDuringSpawnPhase(): boolean;
+  init(mg: Game, ticks: number): void;
+  tick(ticks: number): void;
 }
 
-export interface Execution extends ExecutionView {
-    init(mg: MutableGame, ticks: number): void
-    tick(ticks: number): void
-    owner(): MutablePlayer
+export interface Attack {
+  id(): string;
+  retreating(): boolean;
+  retreated(): boolean;
+  orderRetreat(): void;
+  executeRetreat(): void;
+  target(): Player | TerraNullius;
+  attacker(): Player;
+  troops(): number;
+  setTroops(troops: number): void;
+  isActive(): boolean;
+  delete(): void;
+  // The tile the attack originated from, mostly used for boat attacks.
+  sourceTile(): TileRef | null;
 }
 
 export interface AllianceRequest {
-    requestor(): Player
-    recipient(): Player
-    createdAt(): Tick
-}
-
-export interface MutableAllianceRequest extends AllianceRequest {
-    accept(): void
-    reject(): void
+  accept(): void;
+  reject(): void;
+  requestor(): Player;
+  recipient(): Player;
+  createdAt(): Tick;
 }
 
 export interface Alliance {
-    requestor(): Player
-    recipient(): Player
-    createdAt(): Tick
-    other(player: Player): Player
+  requestor(): Player;
+  recipient(): Player;
+  createdAt(): Tick;
+  other(player: Player): Player;
 }
 
 export interface MutableAlliance extends Alliance {
-    expire(): void
-    other(player: Player): MutablePlayer
+  expire(): void;
+  other(player: Player): Player;
 }
 
 export class PlayerInfo {
-    constructor(
-        public readonly name: string,
-        public readonly playerType: PlayerType,
-        // null if bot.
-        public readonly clientID: ClientID | null,
-        public readonly id: PlayerID
-    ) { }
+  public readonly clan: string | null;
+
+  constructor(
+    public readonly flag: string,
+    public readonly name: string,
+    public readonly playerType: PlayerType,
+    // null if bot.
+    public readonly clientID: ClientID | null,
+    // TODO: make player id the small id
+    public readonly id: PlayerID,
+    public readonly nation?: Nation | null,
+  ) {
+    // Compute clan from name
+    if (!name.startsWith("[") || !name.includes("]")) {
+      this.clan = null;
+    } else {
+      const clanMatch = name.match(/^\[([A-Z]{2,5})\]/);
+      this.clan = clanMatch ? clanMatch[1] : null;
+    }
+  }
 }
 
-export interface TerrainMap {
-    terrain(cell: Cell): TerrainTile
-    neighbors(terrainTile: TerrainTile): TerrainTile[]
-    width(): number
-    height(): number
-}
-
-export interface TerrainTile extends SearchNode {
-    terrainType(): TerrainType
-}
-
-export interface DefenseBonus {
-    // Unit providing the defense bonus
-    unit: Unit
-    amount: number
-    tile: Tile
-}
-
-export interface Tile extends SearchNode {
-    isLand(): boolean
-    isShore(): boolean
-    isOceanShore(): boolean
-    isWater(): boolean
-    isShorelineWater(): boolean
-    isOcean(): boolean
-    isLake(): boolean
-    terrain(): TerrainType
-    magnitude(): number
-    owner(): Player | TerraNullius
-    hasOwner(): boolean
-    isBorder(): boolean
-    borders(other: Player | TerraNullius): boolean
-    isInterior(): boolean
-    cell(): Cell
-    neighbors(): Tile[]
-    neighborsWrapped(): Tile[]
-    onShore(): boolean
-
-    defenseBonuses(): DefenseBonus[]
-    // defense bonus against this player
-    defenseBonus(player: Player): number
-    hasFallout(): boolean
+// Some units have info specific to them
+export interface UnitSpecificInfos {
+  dstPort?: Unit; // Only for trade ships
+  lastSetSafeFromPirates?: number; // Only for trade ships
+  detonationDst?: TileRef; // Only for nukes
+  warshipTarget?: Unit;
+  cooldownDuration?: number;
 }
 
 export interface Unit {
-    type(): UnitType
-    troops(): number
-    tile(): Tile
-    owner(): Player
-    isActive(): boolean
-    info(): UnitInfo
-}
+  id(): number;
 
-export interface MutableUnit extends Unit {
-    move(tile: Tile): void
-    owner(): MutablePlayer
-    setTroops(troops: number): void
-    delete(displayerMessage?: boolean): void
+  // Properties
+  type(): UnitType;
+  troops(): number;
+  owner(): Player;
+  info(): UnitInfo;
+
+  // Location
+  tile(): TileRef;
+  lastTile(): TileRef;
+  move(tile: TileRef): void;
+
+  // State
+  isActive(): boolean;
+  hasHealth(): boolean;
+  health(): number;
+  modifyHealth(delta: number): void;
+
+  setWarshipTarget(target: Unit): void; // warship only
+  warshipTarget(): Unit;
+
+  setCooldown(triggerCooldown: boolean): void;
+  ticksLeftInCooldown(cooldownDuration: number): Tick;
+  isCooldown(): boolean;
+  setDstPort(dstPort: Unit): void;
+  dstPort(): Unit; // Only for trade ships
+  setSafeFromPirates(): void; // Only for trade ships
+  isSafeFromPirates(): boolean; // Only for trade ships
+  detonationDst(): TileRef; // Only for nukes
+
+  setMoveTarget(cell: TileRef): void;
+  moveTarget(): TileRef | null;
+
+  setTargetedBySAM(targeted: boolean): void;
+  targetedBySAM(): boolean;
+
+  // Mutations
+  setTroops(troops: number): void;
+  delete(displayerMessage?: boolean): void;
+
+  // Only for Construction type
+  constructionType(): UnitType | null;
+  setConstructionType(type: UnitType): void;
+
+  // Updates
+  toUpdate(): UnitUpdate;
 }
 
 export interface TerraNullius {
-    ownsTile(cell: Cell): boolean
-    isPlayer(): false
-    id(): PlayerID // always zero, maybe make it TerraNulliusID?
-    clientID(): ClientID
+  isPlayer(): false;
+  id(): PlayerID; // always zero, maybe make it TerraNulliusID?
+  clientID(): ClientID;
+  smallID(): number;
 }
 
 export interface Player {
-    info(): PlayerInfo
-    name(): string
-    displayName(): string
-    clientID(): ClientID
-    id(): PlayerID
-    type(): PlayerType
-    units(...types: UnitType[]): Unit[]
-    ownsTile(cell: Cell): boolean
-    isAlive(): boolean
-    borderTiles(): ReadonlySet<Tile>
-    isPlayer(): this is Player
-    neighbors(): (Player | TerraNullius)[]
-    numTilesOwned(): number
-    tiles(): ReadonlySet<Tile>
-    sharesBorderWith(other: Player | TerraNullius): boolean
-    incomingAllianceRequests(): AllianceRequest[]
-    outgoingAllianceRequests(): AllianceRequest[]
-    alliances(): Alliance[]
-    isAlliedWith(other: Player): boolean
-    allianceWith(other: Player): Alliance | null
-    // Includes recent requests that  are in cooldown
-    // TODO: why can't I have "canSendAllyRequest" function instead?
-    recentOrPendingAllianceRequestWith(other: Player): boolean
-    isTraitor(): boolean
-    canTarget(other: Player): boolean
-    // Targets for this player
-    targets(): Player[]
-    // Targets of player and all allies.
-    transitiveTargets(): Player[]
-    toString(): string
-    canSendEmoji(recipient: Player | typeof AllPlayers): boolean
-    outgoingEmojis(): EmojiMessage[]
-    canDonate(recipient: Player): boolean
-    gold(): Gold
-    // Population = troops + workers
-    population(): number
-    workers(): number
-    // Number between 0, 1
-    targetTroopRatio(): number
-    troops(): number
+  // Basic Info
+  smallID(): number;
+  info(): PlayerInfo;
+  name(): string;
+  displayName(): string;
+  clientID(): ClientID;
+  id(): PlayerID;
+  type(): PlayerType;
+  isPlayer(): this is Player;
+  toString(): string;
 
-    // If can build returns the spawn tile, false otherwise
-    canBuild(type: UnitType, targetTile: Tile): Tile | false
-    lastTileChange(): Tick
+  // State & Properties
+  isAlive(): boolean;
+  isTraitor(): boolean;
+  markTraitor(): void;
+  largestClusterBoundingBox: { min: Cell; max: Cell } | null;
+  lastTileChange(): Tick;
+
+  hasSpawned(): boolean;
+  setHasSpawned(hasSpawned: boolean): void;
+
+  // Territory
+  tiles(): ReadonlySet<TileRef>;
+  borderTiles(): ReadonlySet<TileRef>;
+  numTilesOwned(): number;
+  conquer(tile: TileRef): void;
+  relinquish(tile: TileRef): void;
+
+  // Resources & Population
+  gold(): Gold;
+  population(): number;
+  workers(): number;
+  troops(): number;
+  targetTroopRatio(): number;
+  addGold(toAdd: Gold): void;
+  removeGold(toRemove: Gold): void;
+  addWorkers(toAdd: number): void;
+  removeWorkers(toRemove: number): void;
+  setTargetTroopRatio(target: number): void;
+  setTroops(troops: number): void;
+  addTroops(troops: number): void;
+  removeTroops(troops: number): number;
+
+  // Units
+  units(...types: UnitType[]): Unit[];
+  unitsIncludingConstruction(type: UnitType): Unit[];
+  buildableUnits(tile: TileRef): BuildableUnit[];
+  canBuild(type: UnitType, targetTile: TileRef): TileRef | false;
+  buildUnit(
+    type: UnitType,
+    troops: number,
+    tile: TileRef,
+    unitSpecificInfos?: UnitSpecificInfos,
+  ): Unit;
+  captureUnit(unit: Unit): void;
+
+  // Relations & Diplomacy
+  neighbors(): (Player | TerraNullius)[];
+  sharesBorderWith(other: Player | TerraNullius): boolean;
+  relation(other: Player): Relation;
+  allRelationsSorted(): { player: Player; relation: Relation }[];
+  updateRelation(other: Player, delta: number): void;
+  decayRelations(): void;
+  isOnSameTeam(other: Player): boolean;
+  // Either allied or on same team.
+  isFriendly(other: Player): boolean;
+  team(): Team | null;
+  clan(): string | null;
+  incomingAllianceRequests(): AllianceRequest[];
+  outgoingAllianceRequests(): AllianceRequest[];
+  alliances(): MutableAlliance[];
+  allies(): Player[];
+  isAlliedWith(other: Player): boolean;
+  allianceWith(other: Player): MutableAlliance | null;
+  canSendAllianceRequest(other: Player): boolean;
+  breakAlliance(alliance: Alliance): void;
+  createAllianceRequest(recipient: Player): AllianceRequest;
+
+  // Targeting
+  canTarget(other: Player): boolean;
+  target(other: Player): void;
+  targets(): Player[];
+  transitiveTargets(): Player[];
+
+  // Communication
+  canSendEmoji(recipient: Player | typeof AllPlayers): boolean;
+  outgoingEmojis(): EmojiMessage[];
+  sendEmoji(recipient: Player | typeof AllPlayers, emoji: string): void;
+
+  // Donation
+  canDonate(recipient: Player): boolean;
+  donateTroops(recipient: Player, troops: number): void;
+  donateGold(recipient: Player, gold: number): void;
+
+  // Embargo
+  hasEmbargoAgainst(other: Player): boolean;
+  tradingPartners(): Player[];
+  addEmbargo(other: PlayerID): void;
+  stopEmbargo(other: PlayerID): void;
+  canTrade(other: Player): boolean;
+
+  // Attacking.
+  canAttack(tile: TileRef): boolean;
+  createAttack(
+    target: Player | TerraNullius,
+    troops: number,
+    sourceTile: TileRef,
+  ): Attack;
+  outgoingAttacks(): Attack[];
+  incomingAttacks(): Attack[];
+  orderRetreat(attackID: string): void;
+  executeRetreat(attackID: string): void;
+
+  // Misc
+  toUpdate(): PlayerUpdate;
+  playerProfile(): PlayerProfile;
+  tradingPorts(port: Unit): Unit[];
+  // WARNING: this operation is expensive.
+  bestTransportShipSpawn(tile: TileRef): TileRef | false;
 }
 
-export interface MutablePlayer extends Player {
-    conquer(tile: Tile): void
-    relinquish(tile: Tile): void
-    executions(): Execution[]
-    neighbors(): (MutablePlayer | TerraNullius)[]
-    units(...types: UnitType[]): MutableUnit[]
-    incomingAllianceRequests(): MutableAllianceRequest[]
-    outgoingAllianceRequests(): MutableAllianceRequest[]
-    alliances(): MutableAlliance[]
-    allianceWith(other: Player): MutableAlliance | null
-    breakAlliance(alliance: Alliance): void
-    createAllianceRequest(recipient: Player): MutableAllianceRequest
-    target(other: Player): void
-    targets(): MutablePlayer[]
-    transitiveTargets(): MutablePlayer[]
-    sendEmoji(recipient: Player | typeof AllPlayers, emoji: string): void
-    donate(recipient: MutablePlayer, troops: number): void
+export interface Game extends GameMap {
+  // Map & Dimensions
+  isOnMap(cell: Cell): boolean;
+  width(): number;
+  height(): number;
+  map(): GameMap;
+  miniMap(): GameMap;
+  forEachTile(fn: (tile: TileRef) => void): void;
 
-    addGold(toAdd: Gold): void
-    removeGold(toRemove: Gold): void
+  // Player Management
+  player(id: PlayerID): Player;
+  players(): Player[];
+  allPlayers(): Player[];
+  playerByClientID(id: ClientID): Player | null;
+  playerBySmallID(id: number): Player | TerraNullius;
+  hasPlayer(id: PlayerID): boolean;
+  addPlayer(playerInfo: PlayerInfo): Player;
+  terraNullius(): TerraNullius;
+  owner(ref: TileRef): Player | TerraNullius;
 
-    addWorkers(toAdd: number): void
-    removeWorkers(toRemove: number): void
-    setTargetTroopRatio(target: number): void
-    setTroops(troops: number): void
-    addTroops(troops: number): void
-    removeTroops(troops: number): number
+  teams(): Team[];
 
-    buildUnit(type: UnitType, troops: number, tile: Tile): MutableUnit
-    captureUnit(unit: MutableUnit): void
+  // Game State
+  ticks(): Tick;
+  inSpawnPhase(): boolean;
+  executeNextTick(): GameUpdates;
+  setWinner(winner: Player | Team, allPlayersStats: AllPlayersStats): void;
+  config(): Config;
+
+  // Units
+  units(...types: UnitType[]): Unit[];
+  unitInfo(type: UnitType): UnitInfo;
+  nearbyUnits(
+    tile: TileRef,
+    searchRange: number,
+    types: UnitType | UnitType[],
+  ): Array<{ unit: Unit; distSquared: number }>;
+
+  addExecution(...exec: Execution[]): void;
+  displayMessage(
+    message: string,
+    type: MessageType,
+    playerID: PlayerID | null,
+  ): void;
+
+  displayChat(
+    message: string,
+    category: string,
+    variables: Record<string, string>,
+    playerID: PlayerID | null,
+    isFrom: boolean,
+    recipient: string,
+  ): void;
+
+  // Nations
+  nations(): Nation[];
+
+  numTilesWithFallout(): number;
+  // Optional as it's not initialized before the end of spawn phase
+  stats(): Stats;
 }
 
-export interface Game {
-    // Throws exception is player not found
-    player(id: PlayerID): Player
-    playerByClientID(id: ClientID): Player | null
-    hasPlayer(id: PlayerID): boolean
-    players(): Player[]
-    tile(cell: Cell): Tile
-    isOnMap(cell: Cell): boolean
-    neighbors(cell: Cell | Tile): Tile[]
-    width(): number
-    height(): number
-    numLandTiles(): number
-    forEachTile(fn: (tile: Tile) => void): void
-    executions(): ExecutionView[]
-    terraNullius(): TerraNullius
-    executeNextTick(): void
-    ticks(): Tick
-    inSpawnPhase(): boolean
-    addExecution(...exec: Execution[]): void
-    nations(): Nation[]
-    config(): Config
-    gameConfig(): GameConfig
-    displayMessage(message: string, type: MessageType, playerID: PlayerID | null): void
-    units(...types: UnitType[]): Unit[]
-    unitInfo(type: UnitType): UnitInfo
-    terrainMap(): TerrainMap
-    terrainMiniMap(): TerrainMap
+export interface PlayerActions {
+  canAttack: boolean;
+  buildableUnits: BuildableUnit[];
+  canSendEmojiAllPlayers: boolean;
+  interaction?: PlayerInteraction;
 }
 
-export interface MutableGame extends Game {
-    player(id: PlayerID): MutablePlayer
-    playerByClientID(id: ClientID): MutablePlayer | null
-    players(): MutablePlayer[]
-    addPlayer(playerInfo: PlayerInfo, manpower: number): MutablePlayer
-    executions(): Execution[]
-    units(...types: UnitType[]): MutableUnit[]
-    addTileDefenseBonus(tile: Tile, unit: Unit, amount: number): DefenseBonus
-    removeTileDefenseBonus(bonus: DefenseBonus): void
-    addFallout(tile: Tile)
+export interface BuildableUnit {
+  canBuild: TileRef | false;
+  type: UnitType;
+  cost: number;
 }
 
-export class TileEvent implements GameEvent {
-    constructor(public readonly tile: Tile) { }
+export interface PlayerProfile {
+  relations: Record<number, Relation>;
+  alliances: number[];
 }
 
-export class PlayerEvent implements GameEvent {
-    constructor(public readonly player: Player) { }
+export interface PlayerBorderTiles {
+  borderTiles: ReadonlySet<TileRef>;
 }
 
-export class UnitEvent implements GameEvent {
-    constructor(public readonly unit: Unit, public oldTile: Tile) { }
+export interface PlayerInteraction {
+  sharedBorder: boolean;
+  canSendEmoji: boolean;
+  canSendAllianceRequest: boolean;
+  canBreakAlliance: boolean;
+  canTarget: boolean;
+  canDonate: boolean;
+  canEmbargo: boolean;
 }
 
-export class AllianceRequestEvent implements GameEvent {
-    constructor(public readonly allianceRequest: AllianceRequest) { }
+export interface EmojiMessage {
+  message: string;
+  senderID: number;
+  recipientID: number | typeof AllPlayers;
+  createdAt: Tick;
 }
 
-export class AllianceRequestReplyEvent implements GameEvent {
-    constructor(public readonly allianceRequest: AllianceRequest, public readonly accepted: boolean) { }
+export enum MessageType {
+  SUCCESS,
+  INFO,
+  WARN,
+  ERROR,
+  CHAT,
 }
 
-export class BrokeAllianceEvent implements GameEvent {
-    constructor(public readonly traitor: Player, public readonly betrayed: Player) { }
-}
-
-export class AllianceExpiredEvent implements GameEvent {
-    constructor(public readonly player1: Player, public readonly player2: Player) { }
-}
-
-export class TargetPlayerEvent implements GameEvent {
-    constructor(public readonly player: Player, public readonly target: Player) { }
-}
-
-export class EmojiMessageEvent implements GameEvent {
-    constructor(public readonly message: EmojiMessage) { }
+export interface NameViewData {
+  x: number;
+  y: number;
+  size: number;
 }

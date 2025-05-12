@@ -1,5 +1,5 @@
-    The client of King War game (based on OpenFront game).
-    Copyright (C) 2025  King War Team & OpenFront
+    The client of OpenFront game.
+    Copyright (C) 2025  OpenFront
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by

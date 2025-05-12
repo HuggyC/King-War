@@ -8,6 +8,7 @@
   </picture>
 </p>
 
+![Prettier Check](https://github.com/openfrontio/OpenFrontIO/actions/workflows/prettier.yml/badge.svg)
 [![Crowdin](https://badges.crowdin.net/openfront-mls/localized.svg)](https://crowdin.com/project/openfront-mls)
 
 King War is an online real-time strategy game focused on territorial control and alliance building. Players compete to expand their territory, build structures, and form strategic alliances in various maps based on real-world geography.
@@ -39,8 +40,8 @@ This project uses a dual-licensing approach:
 1. **Clone the repository**
 
    ```bash
-   git clone https://github.com/HuggyC/King-War.git
-   cd King-War
+   git clone https://github.com/HuggyC/OpenFrontIO.git
+   cd OpenFrontIO
    ```
 
 2. **Install dependencies**
