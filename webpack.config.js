@@ -14,6 +14,7 @@ export default (env, argv) => {
 		output: {
 			filename: 'bundle.js',
 			path: path.resolve(__dirname, 'dist'),
+			publicPath: isProduction ? '/King-War/' : '/',
 		},
 		module: {
 			rules: [
