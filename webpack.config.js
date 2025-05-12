@@ -23,16 +23,16 @@ export default async (env, argv) => {
       rules: [
         {
           test: /\.bin$/,
-          type: "asset/resource", // Changed from raw-loader
+          type: "asset/resource",
           generator: {
-            filename: "binary/[name].[contenthash][ext]", // Added content hash
+            filename: "binary/[name].[contenthash][ext]",
           },
         },
         {
           test: /\.txt$/,
-          type: "asset/resource", // Changed from raw-loader
+          type: "asset/resource",
           generator: {
-            filename: "text/[name].[contenthash][ext]", // Added content hash
+            filename: "text/[name].[contenthash][ext]",
           },
         },
         {
@@ -61,10 +61,10 @@ export default async (env, argv) => {
           ],
         },
         {
-          test: /\.(webp|png|jpe?g|gif)$/i,
+          test: /\.(webp|png|jpe?g|gif|svg)$/i,
           type: "asset/resource",
           generator: {
-            filename: "images/[name].[contenthash][ext]", // Added content hash
+            filename: "images/[name].[contenthash][ext]",
           },
         },
         {
@@ -72,17 +72,10 @@ export default async (env, argv) => {
           use: ["html-loader"],
         },
         {
-          test: /\.svg$/,
-          type: "asset/resource", // Changed from asset/inline for caching
-          generator: {
-            filename: "images/[name].[contenthash][ext]", // Added content hash
-          },
-        },
-        {
           test: /\.(woff|woff2|eot|ttf|otf)$/,
-          type: "asset/resource", // Changed from file-loader
+          type: "asset/resource",
           generator: {
-            filename: "fonts/[name].[contenthash][ext]", // Added content hash and fixed path
+            filename: "fonts/[name].[contenthash][ext]",
           },
         },
       ],
@@ -100,7 +93,6 @@ export default async (env, argv) => {
       new HtmlWebpackPlugin({
         template: "./src/client/index.html",
         filename: "index.html",
-        // Add optimization for HTML
         minify: isProduction
           ? {
               collapseWhitespace: true,
@@ -124,8 +116,16 @@ export default async (env, argv) => {
         patterns: [
           {
             from: path.resolve(__dirname, "resources"),
-            to: path.resolve(__dirname, "static"),
+            to: path.resolve(__dirname, "dist"),
             noErrorOnMissing: true,
+          },
+          {
+            from: path.resolve(__dirname, "src/client/privacy-policy.html"),
+            to: path.resolve(__dirname, "dist/privacy-policy.html"),
+          },
+          {
+            from: path.resolve(__dirname, "src/client/terms-of-service.html"),
+            to: path.resolve(__dirname, "dist/terms-of-service.html"),
           },
         ],
         options: { concurrency: 100 },
@@ -135,7 +135,6 @@ export default async (env, argv) => {
       }),
     ],
     optimization: {
-      // Add optimization configuration for better caching
       runtimeChunk: "single",
       splitChunks: {
         cacheGroups: {
@@ -152,13 +151,12 @@ export default async (env, argv) => {
       : {
           devMiddleware: { writeToDisk: true },
           static: {
-            directory: path.join(__dirname, "static"),
+            directory: path.join(__dirname, "dist"),
           },
           historyApiFallback: true,
           compress: true,
           port: 9000,
           proxy: [
-            // WebSocket proxies
             {
               context: ["/socket"],
               target: "ws://localhost:3000",
@@ -166,7 +164,6 @@ export default async (env, argv) => {
               changeOrigin: true,
               logLevel: "debug",
             },
-            // Worker WebSocket proxies - using direct paths without /socket suffix
             {
               context: ["/w0"],
               target: "ws://localhost:3001",
@@ -191,7 +188,6 @@ export default async (env, argv) => {
               changeOrigin: true,
               logLevel: "debug",
             },
-            // Worker proxies for HTTP requests
             {
               context: ["/w0"],
               target: "http://localhost:3001",
@@ -216,7 +212,6 @@ export default async (env, argv) => {
               changeOrigin: true,
               logLevel: "debug",
             },
-            // Original API endpoints
             {
               context: [
                 "/api/env",
