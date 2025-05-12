@@ -127,6 +127,10 @@ export default async (env, argv) => {
             from: path.resolve(__dirname, "src/client/terms-of-service.html"),
             to: path.resolve(__dirname, "dist/terms-of-service.html"),
           },
+          {
+            from: path.resolve(__dirname, "src/client/manifest.json"),
+            to: path.resolve(__dirname, "dist/manifest.json"),
+          },
         ],
         options: { concurrency: 100 },
       }),
