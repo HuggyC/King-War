@@ -222,3 +222,151 @@ export class EventsDisplay extends LitElement implements Layer {
       unsafeDescription: true,
     });
   }
+
+  onAllianceRequestEvent(event: AllianceRequestEvent) {
+    const myPlayer = this.game.playerByClientID(this.clientID);
+    if (!myPlayer || event.allianceRequest.recipient() !== myPlayer) {
+      return;
+    }
+
+    this.addEvent({
+      description: `${event.allianceRequest.requestor().name()} requests an alliance!`,
+      buttons: [
+        {
+          text: "Accept",
+          className: "btn",
+          action: () => this.eventBus.emit(new SendAllianceReplyIntentEvent(event.allianceRequest, true)),
+        },
+        {
+          text: "Reject",
+          className: "btn btn-info",
+          action: () => this.eventBus.emit(new SendAllianceReplyIntentEvent(event.allianceRequest, false)),
+        }
+      ],
+      highlight: true,
+      type: MessageType.INFO,
+      createdAt: this.game.ticks(),
+      onDelete: () => this.eventBus.emit(new SendAllianceReplyIntentEvent(event.allianceRequest, false))
+    });
+  }
+
+  onAllianceRequestReplyEvent(event: AllianceRequestReplyEvent) {
+    const myPlayer = this.game.playerByClientID(this.clientID);
+    if (!myPlayer || event.allianceRequest.requestor() !== myPlayer) {
+      return;
+    }
+
+    this.addEvent({
+      description: `${event.allianceRequest.recipient().name()} ${event.accepted ? "accepted" : "rejected"} your alliance request`,
+      type: event.accepted ? MessageType.SUCCESS : MessageType.ERROR,
+      highlight: true,
+      createdAt: this.game.ticks(),
+    });
+  }
+
+  onBrokeAllianceEvent(event: BrokeAllianceEvent) {
+    const myPlayer = this.game.playerByClientID(this.clientID);
+    if (!myPlayer) return;
+
+    if (!event.betrayed.isTraitor() && event.traitor === myPlayer) {
+      this.addEvent({
+        description: `You broke your alliance with ${event.betrayed.name()}, making you a TRAITOR`,
+        type: MessageType.ERROR,
+        highlight: true,
+        createdAt: this.game.ticks(),
+      });
+    } else if (event.betrayed === myPlayer) {
+      this.addEvent({
+        description: `${event.traitor.name()}, broke their alliance with you`,
+        type: MessageType.ERROR,
+        highlight: true,
+        createdAt: this.game.ticks(),
+      });
+    }
+  }
+
+  onAllianceExpiredEvent(event: AllianceExpiredEvent) {
+    const myPlayer = this.game.playerByClientID(this.clientID);
+    if (!myPlayer) return;
+
+    const other = event.player1 === myPlayer ? event.player2 : event.player2 === myPlayer ? event.player1 : null;
+    if (!other || !myPlayer.isAlive() || !other.isAlive()) return;
+
+    this.addEvent({
+      description: `Your alliance with ${other.name()} expired`,
+      type: MessageType.WARN,
+      highlight: true,
+      createdAt: this.game.ticks(),
+    });
+  }
+
+  onTargetPlayerEvent(event: TargetPlayerEvent) {
+    const myPlayer = this.game.playerByClientID(this.clientID);
+    if (!myPlayer || !myPlayer.isAlliedWith(event.player)) return;
+
+    this.addEvent({
+      description: `${event.player.name()} requests you attack ${event.target.name()}`,
+      type: MessageType.INFO,
+      highlight: true,
+      createdAt: this.game.ticks(),
+    });
+  }
+
+  onEmojiMessageEvent(event: EmojiMessageEvent) {
+    const myPlayer = this.game.playerByClientID(this.clientID);
+    if (!myPlayer) return;
+
+    if (event.message.recipient === myPlayer) {
+      this.addEvent({
+        description: `${event.message.sender.displayName()}:${event.message.emoji}`,
+        type: MessageType.INFO,
+        highlight: true,
+        createdAt: this.game.ticks(),
+      });
+    } else if (event.message.sender === myPlayer && event.message.recipient !== AllPlayers) {
+      this.addEvent({
+        description: `Sent ${event.message.recipient.displayName()}: ${event.message.emoji}`,
+        unsafeDescription: true,
+        type: MessageType.INFO,
+        highlight: true,
+        createdAt: this.game.ticks(),
+      });
+    }
+  }
+
+  render() {
+    if (this.events.length === 0) {
+      return html``;
+    }
+
+    return html`
+      <table class="events-table">
+        <tbody>
+          ${this.events.map((event, index) => html`
+            <tr class="${event.highlight ? 'highlight' : ''} ${MessageType[event.type].toLowerCase()}">
+              <td>
+                ${event.unsafeDescription ? unsafeHTML(onlyImages(event.description)) : event.description}
+                ${event.buttons ? html`
+                  <div class="button-container">
+                    ${event.buttons.map(btn => html`
+                      <button 
+                        class="${btn.className}"
+                        @click=${() => {
+        btn.action();
+        this.removeEvent(index);
+        this.requestUpdate()
+      }}
+                      >
+                        ${btn.text}
+                      </button>
+                    `)}
+                  </div>
+                ` : ''}
+              </td>
+            </tr>
+          `)}
+        </tbody>
+      </table>
+    `;
+  }
+}
